@@ -1,8 +1,11 @@
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 from .grid_view import HEADERS, LABELS, cells
 from .material import example, material
 from .modules.delivery.checks import verify
 from .modules.delivery.service import CODES
+from .modules.playout.ledger import STATUS_LABELS
+from .modules.playout.samples import example_bundle
+from .modules.playout.service import view
 from .modules.runs.routes import archive
 from .pipeline import inspect
 from .problems import Rejection
@@ -46,6 +49,21 @@ def grid(sheet):
     stages, manifest, sample = current()
     if sheet == 'delivery' and manifest:
         verify(archive().read(manifest['id']))
+    playout_data, playbook = None, None
+    if sheet == 'balance':
+        playout_store = current_app.extensions['playout_store']
+        if manifest:
+            try:
+                playbook = playout_store.open(manifest['id'])
+                playout_data = view(playbook)
+            except Rejection as exc:
+                if exc.code != 'NO_PLAYBOOK':
+                    raise
+        if playout_data is None:
+            playout_data = example_bundle(late=request.args.get('late') == '1')
     return render_template('workbook.html', sheet=sheet, tabs=TABS, sample=sample, manifest=manifest,
                            totals=stages['balance']['counts'], rows=cells(stages, sheet, archive(), manifest),
-                           columns=HEADERS[sheet], labels=LABELS, codes=CODES)
+                           columns=HEADERS[sheet], labels=LABELS, codes=CODES,
+                           columns_playout=HEADERS['playout'],
+                           playout=playout_data, playbook=playbook,
+                           state_labels=STATUS_LABELS, state_codes=tuple(STATUS_LABELS))

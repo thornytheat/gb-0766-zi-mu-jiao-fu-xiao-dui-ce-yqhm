@@ -1,0 +1,77 @@
+{% if playout %}
+<section class="panel playout" aria-label="实播回执核对单">
+  <div class="sheet-bar">
+    <h2>实播回执核对 · 按签发包逐帧勾对</h2>
+    <div class="sheet-tools">
+      {% if playbook %}<span>核对单 {{ playbook.run_id[:14] }} · 更新 {{ playout.updated_at[:19] ~ ' UTC' }}</span>
+      {% else %}<span>样例预览 · 不写入档案</span>
+        <a href="{{ url_for('sheets.grid', sheet='balance', sample=sample, late='1') }}">并入晚到回执</a>
+        <a href="{{ url_for('sheets.grid', sheet='balance', sample=sample) }}">首批回执</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="kpis play-kpis">
+    {% for status in state_codes %}<div><b>{{ playout.summary.by_status[status] }}</b><span>{{ state_labels[status] }} <small>帧</small></span></div>{% endfor %}
+    <div><b>{{ playout.summary.signed_frames }}</b><span>签发 <small>帧</small></span></div>
+    <div><b class="{{ 'ok-badge' if playout.summary.reconciled else 'warn-badge' }}">{{ '已齐' if playout.summary.reconciled else '未齐' }}</b><span>回执 <small>状态</small></span></div>
+  </div>
+  <p class="play-note">漏播只计「确认没播」{{ playout.summary.missed_confirmed }} 帧；「回执未到」{{ playout.summary.pending_receipt }} 帧不误报。倒回重放 {{ playout.summary.replayed_frames }} 帧只标注，不抵别处漏播；放错字幕 {{ playout.summary.wrong_caption }} 帧单列。重复回执已去重 {{ playout.summary.duplicate_receipts }} 条。</p>
+
+  <div class="sheet-scroll" tabindex="0"><table id="playout-frames">
+    <thead><tr class="letters"><th rowspan="2" class="pinned">#</th>
+      {% for field in columns_playout %}<th scope="col">{{ 'ABCDEFGHI'[loop.index0] }}</th>{% endfor %}</tr>
+      <tr>{% for field in columns_playout %}<th scope="col">{{ labels[field] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in playout.frames %}{% set rownum = loop.index %}<tr>
+      <th scope="row" class="pinned">{{ rownum }}</th>
+      {% for field in columns_playout %}{% set val = row.get(field) %}
+      <td tabindex="{{ 0 if rownum == 1 and loop.first else -1 }}" data-cell="{{ 'ABCDEFGHI'[loop.index0] }}{{ rownum }}"
+          class="{{ 'number' if field in ('frame','replayed') else '' }}" title="{{ val if val is not none else '' }}">
+        {% if field == 'state' %}<span class="play-state {{ val|lower }}" title="{{ val }}">{{ state_labels[val] }}</span>
+        {% elif field == 'replayed' %}<span class="{{ 'replay-yes' if val else 'replay-no' }}">{{ '是' if val else '—' }}</span>
+        {% elif field == 'receipt_ids' %}{{ val|join(' / ') if val else '—' }}
+        {% elif val is none %}—{% else %}{{ val }}{% endif %}
+      </td>{% endfor %}
+    </tr>{% endfor %}
+    </tbody></table></div>
+
+  <h3 class="subhead">按字幕号汇总结论</h3>
+  <div class="sheet-scroll"><table class="cue-summary">
+    <thead><tr><th scope="col">字幕号</th><th scope="col">签发帧</th>
+      {% for status in state_codes %}<th scope="col">{{ state_labels[status] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in playout.summary.cues %}<tr>
+      <th scope="row">{{ row.cue_id }}</th><td class="number">{{ row.signed }}</td>
+      {% for status in state_codes %}<td class="number {{ 'hot' if row[status] and status in ('WRONG_CAPTION','MISSED_CONFIRMED','PENDING_RECEIPT') else '' }}">{{ row[status] }}</td>{% endfor %}
+    </tr>{% endfor %}
+    </tbody></table></div>
+
+  {% if playbook %}
+  <details class="upload" open><summary>补录回执（晚到回执会更新同一张核对单，同号回执自动去重）</summary>
+    <form id="receipt-form" data-run="{{ playbook.run_id }}">
+      <label>回执 CSV<textarea name="receipts" rows="5" required placeholder="receipt_id,device_id,frame,status,caption_hash,received_at,replay"></textarea></label>
+      <button>核对并更新原单</button>
+      <span id="playout-notice" role="status"></span>
+    </form>
+  </details>
+  {% else %}
+  {% if manifest %}
+  <details class="upload"><summary>为该归档建立实播核对单（按签发包核对，回执未到不算漏播）</summary>
+    <form id="packets-form" data-run="{{ manifest.id }}">
+      <label>签发包 CSV<textarea name="packets" rows="5" required placeholder="packet_id,device_id,frame,cue_id,track,caption_text,caption_hash"></textarea></label>
+      <button>建立核对单</button>
+      <span id="playout-notice" role="status"></span>
+    </form>
+  </details>
+  {% endif %}
+  <details class="upload"><summary>按样例试跑（不写档案）</summary>
+    <form id="preview-form">
+      <label>签发包 CSV<textarea name="packets" rows="4" required></textarea></label>
+      <label>回执 CSV（可留空）<textarea name="receipts" rows="4"></textarea></label>
+      <button>试算核对单</button>
+      <span id="playout-notice" role="status"></span>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
